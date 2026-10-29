@@ -142,6 +142,7 @@
     document.getElementById('settings-short').value = settings.pomodoro.short;
     document.getElementById('settings-long').value = settings.pomodoro.long;
     document.getElementById('settings-rounds').value = settings.pomodoro.rounds;
+    if (window.Sync) Sync.refreshUI();
     UI.openDialog(document.getElementById('settings-dialog'));
   }
 
@@ -317,15 +318,20 @@
   }
 
   async function resetAll() {
+    const connected = Boolean(window.Sync && Sync.auth);
     const ok = await UI.confirm({
       title: 'Apagar todos os dados?',
-      message: 'Hábitos, tarefas, sequências e sessões serão removidos deste navegador. Essa ação não pode ser desfeita.',
+      message: connected
+        ? 'Hábitos, tarefas, sequências e sessões serão removidos deste navegador e também da conta na nuvem. Essa ação não pode ser desfeita.'
+        : 'Hábitos, tarefas, sequências e sessões serão removidos deste navegador. Essa ação não pode ser desfeita.',
       confirmLabel: 'Apagar tudo',
       danger: true
     });
     if (!ok) return;
+    if (connected) await Sync.removeRemote();
     Storage.clear();
     State.reset();
+    if (window.Sync) Sync.afterLocalReset();
     Pomodoro.restartAll();
     applyTheme();
     UI.closeDialog(document.getElementById('settings-dialog'));
@@ -367,7 +373,16 @@
     'export-data': exportData,
     'import-data': () => document.getElementById('import-file').click(),
     'load-demo': loadDemo,
-    'reset-data': resetAll
+    'reset-data': resetAll,
+    'account-login': () => { if (window.Sync) Sync.authenticate('login'); },
+    'account-register': () => { if (window.Sync) Sync.authenticate('register'); },
+    'account-logout': () => { if (window.Sync) Sync.logout(); },
+    'account-sync': () => { if (window.Sync) Sync.syncNow(); },
+    'account-save-api': () => {
+      if (!window.Sync) return;
+      const input = document.getElementById('settings-api-url');
+      if (input) Sync.saveApiBase(input.value);
+    }
   };
 
   function bindEvents() {
@@ -472,6 +487,11 @@
     applyTheme();
     bindEvents();
     State.subscribe(() => {
+      renderCurrentView();
+    });
+
+    document.addEventListener('fluxo:remote', () => {
+      applyTheme();
       renderCurrentView();
     });
 

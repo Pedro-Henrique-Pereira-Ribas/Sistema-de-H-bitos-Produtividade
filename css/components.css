@@ -836,6 +836,114 @@
   flex: none;
 }
 
+#account-logged-out,
+#account-logged-in {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#account-logged-out[hidden],
+#account-logged-in[hidden] {
+  display: none;
+}
+
+.account-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.account-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.account-identity strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.account-identity span {
+  font-size: 11.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.account-badge {
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--success-soft);
+  color: var(--success-text);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.account-badge[data-state="idle"],
+.account-badge[data-state="syncing"],
+.account-badge[data-state="pending"] {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.account-badge[data-state="offline"],
+.account-badge[data-state="error"],
+.account-badge[data-state="conflict"] {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.account-server {
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.account-server summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-soft);
+}
+
+.account-server[open] summary {
+  margin-bottom: 12px;
+}
+
+.account-server .field {
+  margin-bottom: 10px;
+}
+
+.account-server > .btn {
+  align-self: flex-start;
+}
+
+#account-api-base {
+  display: block;
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.sync-conflict-actions {
+  flex-wrap: wrap;
+}
+
+.sync-conflict-actions [data-sync-choice="cloud"] {
+  order: -1;
+  flex-basis: 100%;
+}
+
 /* ---------- Toasts e tooltip ---------- */
 
 .toasts {

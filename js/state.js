@@ -8,6 +8,7 @@
   const State = {
     data: null,
     storageOk: true,
+    onSave: null,
     onSaveError: null,
 
     init() {
@@ -22,11 +23,22 @@
       saveTimer = setTimeout(() => this.saveNow(), 150);
     },
 
+    hasPendingSave() {
+      return saveTimer !== null;
+    },
+
     saveNow() {
       clearTimeout(saveTimer);
       saveTimer = null;
       const ok = Storage.save(this.data);
       this.storageOk = ok;
+      if (ok && typeof this.onSave === 'function') {
+        try {
+          this.onSave();
+        } catch (err) {
+          console.warn('[Fluxo] Falha no gancho de salvamento.', err);
+        }
+      }
       if (!ok && typeof this.onSaveError === 'function') this.onSaveError();
       return ok;
     },

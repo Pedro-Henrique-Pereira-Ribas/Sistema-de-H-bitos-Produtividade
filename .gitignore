@@ -1,3 +1,9 @@
+# Dependências e segredos
+node_modules/
+.env
+.env.*
+!.env.example
+
 # Sistema
 Thumbs.db
 desktop.ini
@@ -10,3 +16,6 @@ desktop.ini
 # Logs e temporários
 *.log
 *.tmp
+
+# Cobertura de testes
+coverage/

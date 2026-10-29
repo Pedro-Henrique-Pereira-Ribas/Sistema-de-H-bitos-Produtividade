@@ -307,8 +307,54 @@
         </section>
 
         <section class="settings-group">
+          <h3>Conta e sincronização</h3>
+          <p class="hint">Opcional. Entre para acessar seus dados em outros dispositivos. Sem conta, tudo continua salvo apenas neste navegador.</p>
+          <div id="account-logged-out">
+            <div class="field">
+              <label class="field-label" for="account-name">Nome</label>
+              <input class="input" type="text" id="account-name" name="accountName" maxlength="80" autocomplete="name" placeholder="Como devemos chamar você?">
+            </div>
+            <div class="field">
+              <label class="field-label" for="account-email">E-mail</label>
+              <input class="input" type="email" id="account-email" name="accountEmail" maxlength="190" autocomplete="email" placeholder="voce@exemplo.com">
+            </div>
+            <div class="field">
+              <label class="field-label" for="account-password">Senha</label>
+              <input class="input" type="password" id="account-password" name="accountPassword" minlength="8" maxlength="72" autocomplete="current-password" placeholder="Mínimo de 8 caracteres">
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="btn btn-primary" data-action="account-login">Entrar</button>
+              <button type="button" class="btn btn-ghost" data-action="account-register">Criar conta</button>
+            </div>
+          </div>
+          <div id="account-logged-in" hidden>
+            <div class="account-user">
+              <div class="account-identity">
+                <strong id="account-user-name">Conta</strong>
+                <span id="account-user-email"></span>
+              </div>
+              <span class="account-badge" id="account-sync-badge" data-state="idle">Conectado</span>
+            </div>
+            <p class="hint" id="account-sync-status">Conectado à sua conta.</p>
+            <div class="settings-actions">
+              <button type="button" class="btn btn-ghost" id="account-sync-button" data-action="account-sync">Sincronizar agora</button>
+              <button type="button" class="btn btn-ghost btn-danger-text" id="account-logout-button" data-action="account-logout">Sair</button>
+            </div>
+          </div>
+          <details class="account-server">
+            <summary>Servidor da API</summary>
+            <div class="field">
+              <label class="field-label" for="settings-api-url">Endereço</label>
+              <input class="input" type="url" id="settings-api-url" name="apiUrl" placeholder="https://sua-api.onrender.com" spellcheck="false">
+              <p class="hint">Em branco, usa o mesmo servidor do app. Ao abrir o arquivo localmente, informe a URL do Render. <span id="account-api-base"></span></p>
+            </div>
+            <button type="button" class="btn btn-ghost" data-action="account-save-api">Salvar servidor</button>
+          </details>
+        </section>
+
+        <section class="settings-group">
           <h3>Seus dados</h3>
-          <p class="hint">Tudo fica no LocalStorage deste navegador. Faça um backup para não perder o histórico.</p>
+          <p class="hint">Backup manual em JSON. Com uma conta conectada, os dados também são sincronizados automaticamente.</p>
           <div class="settings-actions">
             <button type="button" class="btn btn-ghost" data-action="export-data">
               <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg> Exportar JSON
@@ -328,7 +374,7 @@
 
         <p class="settings-note">
           <svg class="icon" aria-hidden="true"><use href="#i-info"></use></svg>
-          Sem conta, sem servidor: seus dados nunca saem deste dispositivo.
+          Funciona offline. Sem conta, os dados ficam só neste navegador. Com conta, são sincronizados com a API.
         </p>
       </div>
       <div class="modal-foot">
@@ -336,6 +382,24 @@
         <button type="submit" class="btn btn-primary">Salvar ajustes</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog class="modal modal-sm" id="sync-conflict-dialog" aria-labelledby="sync-conflict-title">
+    <div class="modal-head">
+      <div>
+        <p class="modal-kicker">Sincronização</p>
+        <h2 class="modal-title" id="sync-conflict-title">Dados diferentes</h2>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p class="confirm-message" id="sync-conflict-message"></p>
+      <p class="hint">Nenhuma alteração é feita até você escolher.</p>
+    </div>
+    <div class="modal-foot sync-conflict-actions">
+      <button type="button" class="btn btn-ghost" data-sync-choice="cancel">Cancelar</button>
+      <button type="button" class="btn btn-ghost" data-sync-choice="local">Manter este dispositivo</button>
+      <button type="button" class="btn btn-primary" data-sync-choice="cloud">Usar dados da nuvem</button>
+    </div>
   </dialog>
 
   <noscript>
@@ -347,6 +411,8 @@
   <script src="js/storage.js" defer></script>
   <script src="js/state.js" defer></script>
   <script src="js/ui.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/sync.js" defer></script>
   <script src="js/habits.js" defer></script>
   <script src="js/tasks.js" defer></script>
   <script src="js/pomodoro.js" defer></script>
