@@ -17,6 +17,10 @@ O **Fluxo** reúne, em uma única interface:
 
 Os dados ficam no **LocalStorage** do navegador. Nada é enviado para a internet.
 
+## Repositório
+
+Código-fonte: [Pedro-Henrique-Pereira-Ribas/Sistema-de-H-bitos-Produtividade](https://github.com/Pedro-Henrique-Pereira-Ribas/Sistema-de-H-bitos-Produtividade).
+
 ## Funcionalidades
 
 ### Hábitos
@@ -95,9 +99,9 @@ Navegadores modernos com suporte a `<dialog>`, CSS moderno e LocalStorage:
 
 ## Backup e restauração
 
-- **Exportar JSON** baixa um arquivo `fluxo-backup-AAAA-MM-DD.json` com hábitos, tarefas, foco, Pomodoro e preferências.
+- **Exportar JSON** baixa um arquivo `fluxo-backup-AAAA-MM-DD.json` com hábitos, tarefas, foco, sessões do Pomodoro e preferências.
 - **Importar JSON** aceita um backup gerado pelo app. O conteúdo é validado e normalizado antes de substituir os dados atuais.
-- A importação pede confirmação e não aceita arquivos sem hábitos ou tarefas nem JSON inválido.
+- A importação pede confirmação e valida a estrutura do arquivo antes de substituir os dados atuais; JSON inválido é rejeitado.
 - **Apagar tudo** remove os dados deste navegador. Exporte um backup antes se quiser guardar o histórico.
 
 ## Privacidade
@@ -162,6 +166,10 @@ O gráfico é desenhado pelo [Chart.js](https://www.chartjs.org/), versão **4.4
 - O Pomodoro não usa notificações do sistema; o aviso é visual e sonoro, conforme o escopo do projeto.
 - O bipe depende do suporte do navegador a Web Audio e pode ser bloqueado por políticas de áudio até a primeira interação.
 - O app precisa de um navegador moderno; versões muito antigas podem não exibir diálogos ou cores corretamente.
+
+## Licença
+
+Distribuído sob a licença MIT. Consulte [LICENSE](./LICENSE).
 
 ---
 
