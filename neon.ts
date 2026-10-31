@@ -4,7 +4,7 @@ const realtimeOrigins = String(
   process.env.NEON_REALTIME_ALLOWED_ORIGINS ||
     "http://localhost:3000,http://localhost:3210,http://localhost:3212," +
       "http://127.0.0.1:3000,http://127.0.0.1:3210,http://127.0.0.1:3212," +
-      "https://fluxo.onrender.com"
+      "https://fluxo.onrender.com,https://fluxo-habitos.onrender.com"
 )
   .split(",")
   .map((origin) => origin.trim())
