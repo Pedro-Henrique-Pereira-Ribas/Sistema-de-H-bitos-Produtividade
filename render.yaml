@@ -31,7 +31,7 @@ services:
       - key: AWS_ENDPOINT_URL_S3
         sync: false
       - key: AWS_REGION
-        value: aws-us-east-2
+        value: us-east-2
       - key: FLUXO_BACKUP_BUCKET
         value: fluxo-backups
       # Neon Functions
