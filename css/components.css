@@ -877,6 +877,13 @@
   overflow-wrap: anywhere;
 }
 
+.account-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .account-badge {
   flex: none;
   padding: 4px 8px;
@@ -887,6 +894,21 @@
   font-weight: 750;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.account-badge[data-state="live"] {
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.account-badge[data-state="connecting"] {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.account-badge[data-state="off"] {
+  background: var(--surface-3);
+  color: var(--muted);
 }
 
 .account-badge[data-state="idle"],

@@ -1,4 +1,4 @@
-/* Testes de integração da API com um store em memória. Rode: npm test */
+/* Testes de integração da API com store e autenticação em memória. Rode: npm test */
 'use strict';
 
 const test = require('node:test');
@@ -7,25 +7,12 @@ const { once } = require('node:events');
 const { createApp } = require('../app');
 
 function createFakeStore() {
-  const users = new Map();
   const states = new Map();
 
   return {
-    users,
     states,
     async health() {
       return true;
-    },
-    async createUser({ id, name, email, passwordHash }) {
-      const user = { id, name, email, password_hash: passwordHash, created_at: Date.now() };
-      users.set(id, user);
-      return { id, name, email, createdAt: user.created_at };
-    },
-    async findUserByEmail(email) {
-      return [...users.values()].find((user) => user.email === email) || null;
-    },
-    async findUserById(id) {
-      return users.get(id) || null;
     },
     async getState(userId) {
       const row = states.get(userId);
@@ -64,14 +51,37 @@ function createFakeStore() {
   };
 }
 
-const SECRET = 'segredo-de-teste-com-mais-de-32-caracteres';
+function createFakeAuth() {
+  const sessions = new Map();
+
+  return {
+    sessions,
+    requireAuth(req, res, next) {
+      const token = req.get('x-test-session');
+      const user = sessions.get(token);
+      if (!user) return res.status(401).json({ error: 'Faça login para continuar.' });
+      req.user = user;
+      req.userId = user.id;
+      return next();
+    },
+    proxy(req, res) {
+      return res.status(404).json({ error: 'Rota de autenticação de teste.' });
+    }
+  };
+}
+
 const store = createFakeStore();
-const app = createApp({ store, jwtSecret: SECRET, enableRateLimit: false });
+const auth = createFakeAuth();
+const app = createApp({ store, auth, enableRateLimit: false });
+
+const USER = { id: '11111111-1111-4111-8111-111111111111', name: 'Ana Silva', email: 'ana@example.com' };
+const SESSION = 'sessao-de-teste';
 
 let server;
 let base;
 
 test.before(async () => {
+  auth.sessions.set(SESSION, USER);
   server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   base = `http://127.0.0.1:${server.address().port}`;
@@ -81,10 +91,10 @@ test.after(() => {
   server.close();
 });
 
-async function api(path, { method = 'GET', body, token } = {}) {
+async function api(path, { method = 'GET', body, session = SESSION } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (session) headers['x-test-session'] = session;
 
   const response = await fetch(`${base}${path}`, {
     method,
@@ -103,76 +113,28 @@ async function api(path, { method = 'GET', body, token } = {}) {
   return { status: response.status, data };
 }
 
-let token;
-let userId;
-
 test('health responde ok', async () => {
   const { status, data } = await api('/api/health');
   assert.equal(status, 200);
   assert.equal(data.ok, true);
 });
 
-test('cadastro rejeita senha curta', async () => {
-  const { status, data } = await api('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'Ana', email: 'ana@example.com', password: '123' }
-  });
-  assert.equal(status, 400);
-  assert.match(data.error, /8 caracteres/);
-});
-
-test('cadastro cria usuário e devolve token', async () => {
-  const { status, data } = await api('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'Ana Silva', email: 'ana@example.com', password: 'senha-segura' }
-  });
-  assert.equal(status, 201);
-  assert.ok(data.token);
-  assert.equal(data.user.name, 'Ana Silva');
-  assert.equal(data.user.email, 'ana@example.com');
-  assert.equal(data.user.password_hash, undefined);
-  token = data.token;
-  userId = data.user.id;
-});
-
-test('cadastro duplicado é rejeitado', async () => {
-  const { status } = await api('/api/auth/register', {
-    method: 'POST',
-    body: { name: 'Ana', email: 'ana@example.com', password: 'outra-senha' }
-  });
-  assert.equal(status, 409);
-});
-
-test('login rejeita senha errada', async () => {
-  const { status } = await api('/api/auth/login', {
-    method: 'POST',
-    body: { email: 'ana@example.com', password: 'senha-errada' }
-  });
-  assert.equal(status, 401);
-});
-
-test('login devolve token válido', async () => {
-  const { status, data } = await api('/api/auth/login', {
-    method: 'POST',
-    body: { email: 'ANA@example.com', password: 'senha-segura' }
-  });
-  assert.equal(status, 200);
-  assert.ok(data.token);
-});
-
 test('/me exige autenticação', async () => {
-  const { status } = await api('/api/me');
+  const { status } = await api('/api/me', { session: null });
   assert.equal(status, 401);
 });
 
 test('/me devolve o usuário autenticado', async () => {
-  const { status, data } = await api('/api/me', { token });
+  const { status, data } = await api('/api/me');
   assert.equal(status, 200);
-  assert.equal(data.user.id, userId);
+  assert.equal(data.user.id, USER.id);
+  assert.equal(data.user.name, USER.name);
+  assert.equal(data.user.email, USER.email);
+  assert.equal(data.user.password_hash, undefined);
 });
 
 test('estado inicial é vazio', async () => {
-  const { status, data } = await api('/api/state', { token });
+  const { status, data } = await api('/api/state');
   assert.equal(status, 200);
   assert.equal(data.data, null);
   assert.equal(data.revision, 0);
@@ -182,13 +144,12 @@ test('primeira gravação cria revisão 1', async () => {
   const payload = { version: 1, habits: [{ id: 'h1', name: 'Ler' }], tasks: [] };
   const { status, data } = await api('/api/state', {
     method: 'PUT',
-    token,
     body: { data: payload, baseRevision: 0 }
   });
   assert.equal(status, 200);
   assert.equal(data.revision, 1);
 
-  const current = await api('/api/state', { token });
+  const current = await api('/api/state');
   assert.equal(current.data.revision, 1);
   assert.equal(current.data.data.habits[0].name, 'Ler');
 });
@@ -196,7 +157,6 @@ test('primeira gravação cria revisão 1', async () => {
 test('gravação com revisão antiga gera conflito', async () => {
   const { status, data } = await api('/api/state', {
     method: 'PUT',
-    token,
     body: { data: { version: 1, habits: [], tasks: [] }, baseRevision: 0 }
   });
   assert.equal(status, 409);
@@ -207,7 +167,6 @@ test('gravação com revisão antiga gera conflito', async () => {
 test('gravação com revisão correta avança para 2', async () => {
   const { status, data } = await api('/api/state', {
     method: 'PUT',
-    token,
     body: { data: { version: 1, habits: [], tasks: [] }, baseRevision: 1 }
   });
   assert.equal(status, 200);
@@ -217,7 +176,6 @@ test('gravação com revisão correta avança para 2', async () => {
 test('estado rejeita payload que não é objeto', async () => {
   const { status } = await api('/api/state', {
     method: 'PUT',
-    token,
     body: { data: 'texto', baseRevision: 2 }
   });
   assert.equal(status, 400);
@@ -226,7 +184,6 @@ test('estado rejeita payload que não é objeto', async () => {
 test('JSON inválido retorna 400', async () => {
   const { status } = await api('/api/state', {
     method: 'PUT',
-    token,
     body: '{"data":'
   });
   assert.equal(status, 400);
@@ -236,18 +193,17 @@ test('limite de 1 MB é aplicado', async () => {
   const big = { version: 1, habits: [], tasks: [], padding: 'x'.repeat(1024 * 1024) };
   const { status } = await api('/api/state', {
     method: 'PUT',
-    token,
     body: { data: big, baseRevision: 2 }
   });
   assert.equal(status, 413);
 });
 
 test('DELETE /state apaga os dados da conta', async () => {
-  const { status, data } = await api('/api/state', { method: 'DELETE', token });
+  const { status, data } = await api('/api/state', { method: 'DELETE' });
   assert.equal(status, 200);
   assert.equal(data.ok, true);
 
-  const current = await api('/api/state', { token });
+  const current = await api('/api/state');
   assert.equal(current.data.data, null);
   assert.equal(current.data.revision, 0);
 });

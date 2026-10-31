@@ -333,7 +333,10 @@
                 <strong id="account-user-name">Conta</strong>
                 <span id="account-user-email"></span>
               </div>
-              <span class="account-badge" id="account-sync-badge" data-state="idle">Conectado</span>
+              <div class="account-badges">
+                <span class="account-badge" id="account-sync-badge" data-state="idle">Conectado</span>
+                <span class="account-badge" id="account-realtime-badge" data-state="off">Tempo real off</span>
+              </div>
             </div>
             <p class="hint" id="account-sync-status">Conectado à sua conta.</p>
             <div class="settings-actions">
@@ -350,6 +353,25 @@
             </div>
             <button type="button" class="btn btn-ghost" data-action="account-save-api">Salvar servidor</button>
           </details>
+        </section>
+
+        <section class="settings-group">
+          <h3>Nuvem Neon</h3>
+          <p class="hint">Postgres, Neon Auth, Object Storage, Functions, Realtime e AI Gateway.</p>
+          <p class="hint" id="cloud-status">Entre na conta para verificar os serviços.</p>
+          <div class="settings-actions">
+            <button type="button" class="btn btn-ghost" data-action="cloud-check">Verificar serviços</button>
+            <button type="button" class="btn btn-ghost" data-action="cloud-backup">Salvar backup na nuvem</button>
+            <button type="button" class="btn btn-ghost" data-action="cloud-backup-download">Baixar último backup</button>
+          </div>
+          <div class="field">
+            <label class="field-label" for="cloud-ai-goal">Sugestão de hábito com IA</label>
+            <input class="input" type="text" id="cloud-ai-goal" maxlength="300" placeholder="Ex.: dormir melhor">
+            <div class="settings-actions">
+              <button type="button" class="btn btn-ghost" data-action="cloud-ai-suggest">Sugerir com IA</button>
+            </div>
+            <p class="hint" id="cloud-ai-output"></p>
+          </div>
         </section>
 
         <section class="settings-group">
@@ -407,12 +429,16 @@
   </noscript>
 
   <script src="vendor/chart.umd.min.js" defer></script>
+  <script src="vendor/neon-auth.js" defer></script>
+  <script src="vendor/neon-realtime.js" defer></script>
   <script src="js/utils.js" defer></script>
   <script src="js/storage.js" defer></script>
   <script src="js/state.js" defer></script>
   <script src="js/ui.js" defer></script>
   <script src="js/api.js" defer></script>
   <script src="js/sync.js" defer></script>
+  <script src="js/cloud.js" defer></script>
+  <script src="js/realtime.js" defer></script>
   <script src="js/habits.js" defer></script>
   <script src="js/tasks.js" defer></script>
   <script src="js/pomodoro.js" defer></script>

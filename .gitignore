@@ -19,3 +19,8 @@ desktop.ini
 
 # Cobertura de testes
 coverage/
+.neon
+
+# Ferramentas locais de agente
+.agents/
+skills-lock.json

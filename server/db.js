@@ -1,72 +1,75 @@
-/* Conexão com TiDB Cloud (compatível com MySQL) e criação do schema. */
+/* Conexão com o Neon Postgres (Lakebase) e aplicação do schema. */
 'use strict';
 
 const fs = require('node:fs');
 const path = require('node:path');
-const mysql = require('mysql2/promise');
+const { Client, Pool } = require('pg');
 
 let pool = null;
 
-function sslConfig() {
-  if (String(process.env.DB_SSL || 'true').toLowerCase() === 'false') return undefined;
-
-  const ssl = {
-    minVersion: 'TLSv1.2',
-    rejectUnauthorized: String(process.env.DB_SSL_REJECT_UNAUTHORIZED || 'true').toLowerCase() !== 'false'
-  };
-
-  const ca = process.env.DB_SSL_CA;
-  if (ca) ssl.ca = ca.replace(/\\n/g, '\n');
-
-  return ssl;
-}
-
-function baseConfig() {
-  const config = {
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT || 4000),
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    waitForConnections: true,
-    connectionLimit: Number(process.env.DB_POOL_SIZE || 5),
-    queueLimit: 0,
-    enableKeepAlive: true,
-    timezone: 'Z'
-  };
-
-  const ssl = sslConfig();
-  if (ssl) config.ssl = ssl;
-
-  return config;
-}
-
 function checkConfig() {
-  const missing = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'].filter((key) => !process.env[key]);
-  if (missing.length) {
-    throw new Error(`Variáveis de ambiente ausentes: ${missing.join(', ')}`);
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL não configurada.');
   }
+}
+
+function normalizeConnectionString(value) {
+  if (!value) return value;
+  try {
+    const url = new URL(value);
+    if (url.hostname.endsWith('.neon.tech') && url.searchParams.get('sslmode') === 'require') {
+      url.searchParams.set('sslmode', 'verify-full');
+    }
+    return url.toString();
+  } catch (err) {
+    return value;
+  }
+}
+
+function directConnectionString() {
+  return normalizeConnectionString(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL);
+}
+
+function poolConfig() {
+  return {
+    connectionString: normalizeConnectionString(process.env.DATABASE_URL),
+    max: Number(process.env.DB_POOL_SIZE || 5),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+    application_name: 'fluxo-api'
+  };
 }
 
 function getPool() {
   if (pool) return pool;
   checkConfig();
-  pool = mysql.createPool({
-    ...baseConfig(),
-    database: process.env.DB_NAME
+  pool = new Pool(poolConfig());
+  pool.on('error', (err) => {
+    console.error('[Fluxo DB] Erro em conexão ociosa do pool:', err.message);
   });
   return pool;
 }
 
-async function ensureSchema() {
-  const db = getPool();
-  const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-  const statements = sql
-    .split(';')
-    .map((statement) => statement.trim())
-    .filter(Boolean);
+function readSchema() {
+  return fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+}
 
-  for (const statement of statements) {
-    await db.query(statement);
+/**
+ * Aplica o schema usando a conexão direta (sem PgBouncer), como recomendado
+ * para migrações no Neon. O DDL é idempotente.
+ */
+async function ensureSchema() {
+  checkConfig();
+  const client = new Client({
+    connectionString: directConnectionString(),
+    application_name: 'fluxo-schema'
+  });
+
+  await client.connect();
+  try {
+    await client.query(readSchema());
+  } finally {
+    await client.end();
   }
 }
 
@@ -76,4 +79,12 @@ async function closePool() {
   pool = null;
 }
 
-module.exports = { baseConfig, checkConfig, ensureSchema, getPool, closePool, sslConfig };
+module.exports = {
+  checkConfig,
+  directConnectionString,
+  ensureSchema,
+  getPool,
+  poolConfig,
+  readSchema,
+  closePool
+};

@@ -7,6 +7,10 @@
   const POLL_INTERVAL = 60000;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+  function emitAuthEvent(name) {
+    document.dispatchEvent(new CustomEvent(name));
+  }
+
   function readMeta() {
     try {
       const raw = localStorage.getItem(META_KEY);
@@ -82,11 +86,37 @@
       this.bindEvents();
       this.refreshUI();
 
-      if (!this.auth) return;
+      if (!this.auth) {
+        this.restoreSession();
+        return;
+      }
 
       this.ensureMeta();
-      this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL);
+      this.startPolling();
       this.validateSession();
+    },
+
+    startPolling() {
+      if (this.pollTimer) return;
+      this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL);
+    },
+
+    async restoreSession() {
+      try {
+        const { user } = await FluxoAPI.me();
+        if (this.auth || !user) return;
+        this.auth = { user };
+        FluxoAPI.setAuth(this.auth);
+        this.ensureMeta();
+        this.active = true;
+        this.startPolling();
+        await this.initialSync();
+        emitAuthEvent('fluxo:auth');
+      } catch (err) {
+        /* sem sessão ou sem conexão: o app continua no modo local */
+      } finally {
+        this.refreshUI();
+      }
     },
 
     bindEvents() {
@@ -139,6 +169,7 @@
         FluxoAPI.setAuth(this.auth);
         this.active = true;
         await this.initialSync();
+        emitAuthEvent('fluxo:auth');
       } catch (err) {
         if (err.status === 401) {
           this.handleUnauthorized();
@@ -224,6 +255,7 @@
         if (passwordEl) passwordEl.value = '';
         UI.toast(mode === 'register' ? 'Conta criada com sucesso.' : 'Login realizado.', 'success');
         await this.initialSync();
+        emitAuthEvent('fluxo:auth');
       } catch (err) {
         if (err.status === 401) this.handleUnauthorized();
         else {
@@ -247,13 +279,25 @@
       });
       if (!confirmed) return;
 
+      this.busy = true;
+      this.setStatus('syncing', 'Saindo...');
+      this.refreshUI();
+
+      try {
+        await FluxoAPI.logout();
+      } catch (err) {
+        /* a sessão local é limpa mesmo se o servidor estiver offline */
+      }
+
       this.active = false;
       this.auth = null;
       this.blocked = false;
       this.conflict = null;
       clearTimeout(this.pushTimer);
       FluxoAPI.clearAuth();
+      this.busy = false;
       this.setStatus('idle');
+      emitAuthEvent('fluxo:logout');
       this.refreshUI();
       UI.toast('Você saiu da conta. Os dados locais foram mantidos.', 'info');
     },
@@ -266,6 +310,7 @@
       clearTimeout(this.pushTimer);
       FluxoAPI.clearAuth();
       this.setStatus('idle');
+      emitAuthEvent('fluxo:logout');
       this.refreshUI();
       UI.toast(message || 'Sessão expirada. Entre novamente para sincronizar.', 'error', 6000);
     },

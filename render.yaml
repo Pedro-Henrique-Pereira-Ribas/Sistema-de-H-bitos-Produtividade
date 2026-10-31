@@ -3,7 +3,7 @@ services:
     name: fluxo
     runtime: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
@@ -12,19 +12,45 @@ services:
         value: "22"
       - key: NODE_ENV
         value: production
-      - key: DB_HOST
+      # Preencha com as URLs do projeto Neon (painel > Connect / Auth).
+      - key: DATABASE_URL
         sync: false
-      - key: DB_PORT
-        value: "4000"
-      - key: DB_USER
+      - key: DATABASE_URL_UNPOOLED
         sync: false
-      - key: DB_PASSWORD
+      - key: NEON_AUTH_BASE_URL
         sync: false
-      - key: DB_NAME
-        value: fluxo
-      - key: DB_SSL
-        value: "true"
-      - key: JWT_SECRET
-        generateValue: true
-      - key: DB_SSL_CA
+      - key: NEON_AUTH_JWKS_URL
         sync: false
+      - key: NEON_BRANCH
+        value: production
+      # Neon Object Storage (preencha com os valores de `neon deploy`)
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_ENDPOINT_URL_S3
+        sync: false
+      - key: AWS_REGION
+        value: aws-us-east-2
+      - key: FLUXO_BACKUP_BUCKET
+        value: fluxo-backups
+      # Neon Functions
+      - key: NEON_FUNCTION_FLUXOSTATUS_BASE_URL
+        sync: false
+      - key: FLUXO_FUNCTION_KEY
+        sync: false
+      # Neon Realtime
+      - key: NEON_REALTIME_URL
+        sync: false
+      - key: NEON_REALTIME_SECRET
+        sync: false
+      # Neon AI Gateway: só funciona após upgrade para plano pago.
+      # - key: NEON_AI_GATEWAY_BASE_URL
+      #   sync: false
+      # - key: NEON_AI_GATEWAY_TOKEN
+      #   sync: false
+      # - key: NEON_AI_MODEL
+      #   value: gpt-5-mini
+      # Opcional: restrinja as origens permitidas.
+      # - key: CORS_ORIGIN
+      #   sync: false

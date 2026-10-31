@@ -1,67 +1,30 @@
-/* API HTTP do Fluxo: autenticação, estado sincronizado e arquivos estáticos. */
+/* API HTTP do Fluxo: autenticação Neon, estado sincronizado e arquivos estáticos. */
 'use strict';
 
 const path = require('node:path');
-const crypto = require('node:crypto');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+
+const { createNeonAuth } = require('./auth');
+const ai = require('./ai');
+const cloudFunctions = require('./cloud-functions');
+const realtime = require('./realtime');
+const storage = require('./storage');
 
 const ROOT = path.join(__dirname, '..');
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MAX_STATE_BYTES = 1024 * 1024;
-const TOKEN_ISSUER = 'fluxo-api';
-const TOKEN_AUDIENCE = 'fluxo-web';
-
-const DUMMY_HASH = bcrypt.hashSync('fluxo-dummy-password', 10);
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function text(value, max) {
-  if (typeof value !== 'string') return '';
-  return value.trim().slice(0, max);
-}
-
-function normalizeEmail(value) {
-  return text(value, 190).toLowerCase();
-}
-
 function publicUser(user) {
-  return { id: user.id, name: user.name, email: user.email };
-}
-
-function signToken(user, secret) {
-  return jwt.sign(
-    { sub: user.id, email: user.email },
-    secret,
-    { expiresIn: '30d', issuer: TOKEN_ISSUER, audience: TOKEN_AUDIENCE }
-  );
-}
-
-function requireAuth(secret) {
-  return (req, res, next) => {
-    const header = req.get('authorization') || '';
-    const [scheme, token] = header.split(' ');
-    if (scheme !== 'Bearer' || !token) {
-      return res.status(401).json({ error: 'Faça login para continuar.' });
-    }
-
-    try {
-      const payload = jwt.verify(token, secret, {
-        issuer: TOKEN_ISSUER,
-        audience: TOKEN_AUDIENCE
-      });
-      if (!payload || typeof payload.sub !== 'string') throw new Error('Token inválido');
-      req.userId = payload.sub;
-      return next();
-    } catch (err) {
-      return res.status(401).json({ error: 'Sessão expirada. Entre novamente.' });
-    }
+  return {
+    id: user.id,
+    name: user.name || '',
+    email: user.email || ''
   };
 }
 
@@ -76,9 +39,9 @@ function rateLimiter({ windowMs, max, message, enabled }) {
   });
 }
 
-function createApp({ store, jwtSecret, enableRateLimit = true } = {}) {
+function createApp({ store, auth, enableRateLimit = true } = {}) {
   if (!store) throw new Error('A API precisa de um store.');
-  if (!jwtSecret) throw new Error('JWT_SECRET não configurado.');
+  const authService = auth || createNeonAuth();
 
   const app = express();
   app.disable('x-powered-by');
@@ -97,12 +60,11 @@ function createApp({ store, jwtSecret, enableRateLimit = true } = {}) {
 
   app.use(cors({
     origin: configuredOrigins.length ? configuredOrigins : true,
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     maxAge: 86400
   }));
-
-  app.use(express.json({ limit: '1100kb' }));
 
   const globalLimiter = rateLimiter({
     windowMs: 15 * 60 * 1000,
@@ -120,6 +82,16 @@ function createApp({ store, jwtSecret, enableRateLimit = true } = {}) {
 
   app.use('/api', globalLimiter);
 
+  // O proxy do Neon Auth precisa receber o corpo cru antes do express.json().
+  app.use(
+    '/api/auth',
+    authLimiter,
+    express.raw({ type: '*/*', limit: '1mb' }),
+    authService.proxy
+  );
+
+  app.use(express.json({ limit: '1100kb' }));
+
   app.get('/api/health', async (req, res) => {
     try {
       await store.health();
@@ -129,84 +101,149 @@ function createApp({ store, jwtSecret, enableRateLimit = true } = {}) {
     }
   });
 
-  app.post('/api/auth/register', authLimiter, async (req, res, next) => {
+  // Configuração pública: apenas URL do Realtime e disponibilidade dos serviços.
+  app.get('/api/config', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+      realtime: realtime.publicConfig(),
+      features: {
+        storage: storage.configured(),
+        functions: cloudFunctions.configured(),
+        ai: ai.configured()
+      }
+    });
+  });
+
+  app.get('/api/me', authService.requireAuth, async (req, res) => {
+    return res.json({ user: publicUser(req.user) });
+  });
+
+  // Agrega o estado dos serviços de nuvem para a tela de ajustes e para os testes.
+  app.get('/api/cloud/status', authService.requireAuth, async (req, res, next) => {
+    try {
+      const [postgres, storageResult, functionResult] = await Promise.allSettled([
+        store.health(),
+        storage.health(req.userId),
+        cloudFunctions.health()
+      ]);
+
+      let aiStatus;
+      if (ai.configured()) {
+        try {
+          aiStatus = await ai.status();
+        } catch (err) {
+          aiStatus = { configured: true, ok: false, error: err.message };
+        }
+      } else {
+        aiStatus = {
+          configured: false,
+          ok: false,
+          reason: 'AI Gateway exige plano Neon pago (Launch/Scale) e créditos pré-pagos.'
+        };
+      }
+
+      return res.json({
+        postgres: postgres.status === 'fulfilled' && postgres.value === true,
+        auth: true,
+        storage: storageResult.status === 'fulfilled'
+          ? storageResult.value
+          : { ok: false, error: storageResult.reason.message },
+        functions: functionResult.status === 'fulfilled'
+          ? functionResult.value
+          : { ok: false, error: functionResult.reason.message },
+        realtime: realtime.publicConfig(),
+        ai: aiStatus
+      });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  // Emite uma capability selada; o segredo do Realtime fica no servidor.
+  app.post('/api/state/live', authService.requireAuth, async (req, res, next) => {
+    try {
+      const sealed = await realtime.sealState(req.userId);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.json(sealed);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.get('/api/cloud/storage/health', authService.requireAuth, async (req, res, next) => {
+    try {
+      return res.json(await storage.health(req.userId));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.post('/api/cloud/backup', authService.requireAuth, async (req, res, next) => {
+    try {
+      const state = await store.getState(req.userId);
+      if (!state.data) {
+        return res.status(400).json({ error: 'Ainda não há dados na nuvem para gerar um backup.' });
+      }
+      return res.json(await storage.putBackup(req.userId, state));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.get('/api/cloud/backups', authService.requireAuth, async (req, res, next) => {
+    try {
+      return res.json({ backups: await storage.listBackups(req.userId) });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.get('/api/cloud/backups/url', authService.requireAuth, async (req, res, next) => {
+    try {
+      const key = String(req.query.key || '');
+      if (!key) return res.status(400).json({ error: 'Informe o backup.' });
+      return res.json({ url: await storage.backupUrl(req.userId, key) });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.delete('/api/cloud/backups', authService.requireAuth, async (req, res, next) => {
+    try {
+      const key = String(req.query.key || '');
+      if (!key) return res.status(400).json({ error: 'Informe o backup.' });
+      return res.json(await storage.deleteBackup(req.userId, key));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.get('/api/cloud/function/health', authService.requireAuth, async (req, res, next) => {
+    try {
+      return res.json(await cloudFunctions.health());
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.get('/api/cloud/ai/status', authService.requireAuth, async (req, res, next) => {
+    try {
+      return res.json(await ai.status());
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  app.post('/api/cloud/ai/suggest', authService.requireAuth, async (req, res, next) => {
     try {
       const body = isPlainObject(req.body) ? req.body : {};
-      const name = text(body.name, 80);
-      const email = normalizeEmail(body.email);
-      const password = typeof body.password === 'string' ? body.password : '';
-
-      if (name.length < 2) {
-        return res.status(400).json({ error: 'Informe seu nome (mínimo de 2 caracteres).' });
-      }
-      if (!EMAIL_RE.test(email)) {
-        return res.status(400).json({ error: 'Informe um e-mail válido.' });
-      }
-      if (password.length < 8) {
-        return res.status(400).json({ error: 'A senha precisa ter pelo menos 8 caracteres.' });
-      }
-      if (Buffer.byteLength(password, 'utf8') > 72) {
-        return res.status(400).json({ error: 'A senha é longa demais.' });
-      }
-
-      const existing = await store.findUserByEmail(email);
-      if (existing) {
-        return res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
-      }
-
-      const id = crypto.randomUUID();
-      const passwordHash = await bcrypt.hash(password, 10);
-      const user = await store.createUser({ id, name, email, passwordHash });
-      const token = signToken(user, jwtSecret);
-
-      return res.status(201).json({ token, user: publicUser(user) });
-    } catch (err) {
-      if (err && err.code === 'ER_DUP_ENTRY') {
-        return res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
-      }
-      return next(err);
-    }
-  });
-
-  app.post('/api/auth/login', authLimiter, async (req, res, next) => {
-    try {
-      const body = isPlainObject(req.body) ? req.body : {};
-      const email = normalizeEmail(body.email);
-      const password = typeof body.password === 'string' ? body.password : '';
-
-      if (!EMAIL_RE.test(email) || !password) {
-        return res.status(400).json({ error: 'Informe e-mail e senha.' });
-      }
-
-      const user = await store.findUserByEmail(email);
-      const valid = user
-        ? await bcrypt.compare(password, user.password_hash)
-        : await bcrypt.compare(password, DUMMY_HASH);
-
-      if (!user || !valid) {
-        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
-      }
-
-      const token = signToken(user, jwtSecret);
-      return res.json({ token, user: publicUser(user) });
+      return res.json(await ai.suggest(body.goal));
     } catch (err) {
       return next(err);
     }
   });
 
-  app.get('/api/me', requireAuth(jwtSecret), async (req, res, next) => {
-    try {
-      const user = await store.findUserById(req.userId);
-      if (!user) {
-        return res.status(401).json({ error: 'Conta não encontrada. Entre novamente.' });
-      }
-      return res.json({ user: publicUser(user) });
-    } catch (err) {
-      return next(err);
-    }
-  });
-
-  app.get('/api/state', requireAuth(jwtSecret), async (req, res, next) => {
+  app.get('/api/state', authService.requireAuth, async (req, res, next) => {
     try {
       const state = await store.getState(req.userId);
       return res.json(state);
@@ -215,7 +252,7 @@ function createApp({ store, jwtSecret, enableRateLimit = true } = {}) {
     }
   });
 
-  app.put('/api/state', requireAuth(jwtSecret), async (req, res, next) => {
+  app.put('/api/state', authService.requireAuth, async (req, res, next) => {
     try {
       const body = isPlainObject(req.body) ? req.body : {};
       const baseRevision = Number(body.baseRevision);
@@ -246,7 +283,7 @@ function createApp({ store, jwtSecret, enableRateLimit = true } = {}) {
     }
   });
 
-  app.delete('/api/state', requireAuth(jwtSecret), async (req, res, next) => {
+  app.delete('/api/state', authService.requireAuth, async (req, res, next) => {
     try {
       await store.deleteState(req.userId);
       return res.json({ ok: true });
@@ -274,6 +311,12 @@ function createApp({ store, jwtSecret, enableRateLimit = true } = {}) {
     }
     if (err && err.type === 'entity.too.large') {
       return res.status(413).json({ error: 'Requisição grande demais.' });
+    }
+    if (err && err.expose && Number.isInteger(err.status)) {
+      return res.status(err.status).json({
+        error: err.message,
+        code: err.code || 'CLOUD_SERVICE_ERROR'
+      });
     }
 
     console.error('[Fluxo API]', err && err.message ? err.message : err);

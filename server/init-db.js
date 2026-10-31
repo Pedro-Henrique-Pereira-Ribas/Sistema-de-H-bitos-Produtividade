@@ -1,49 +1,30 @@
-/* Cria o banco e as tabelas no TiDB Cloud. Rode uma vez: npm run db:init */
+/* Aplica o schema no Neon Postgres. Rode quando quiser: npm run db:init */
 'use strict';
 
 const path = require('node:path');
-const fs = require('node:fs');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const mysql = require('mysql2/promise');
-const { baseConfig } = require('./db');
+const { Client } = require('pg');
+const { directConnectionString, readSchema } = require('./db');
 
 async function main() {
-  const missing = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'].filter((key) => !process.env[key]);
-  if (missing.length) {
-    throw new Error(`Variáveis de ambiente ausentes: ${missing.join(', ')}`);
+  const connectionString = directConnectionString();
+  if (!connectionString) {
+    throw new Error('DATABASE_URL não configurada.');
   }
 
-  const database = process.env.DB_NAME;
-  if (!/^[A-Za-z0-9_]+$/.test(database)) {
-    throw new Error('DB_NAME deve conter apenas letras, números e sublinhado.');
-  }
-
-  const connection = await mysql.createConnection({
-    ...baseConfig(),
-    database: undefined,
-    multipleStatements: false
+  const client = new Client({
+    connectionString,
+    application_name: 'fluxo-schema'
   });
 
+  await client.connect();
   try {
-    await connection.query(
-      `CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
-    );
-    await connection.query(`USE \`${database}\``);
-
-    const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-    const statements = sql
-      .split(';')
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-
-    for (const statement of statements) {
-      await connection.query(statement);
-    }
-
-    console.log(`[Fluxo] Banco "${database}" pronto em ${process.env.DB_HOST}.`);
+    await client.query(readSchema());
+    const { rows } = await client.query('SELECT current_database() AS db');
+    console.log(`[Fluxo] Schema aplicado no banco "${rows[0].db}".`);
   } finally {
-    await connection.end();
+    await client.end();
   }
 }
 

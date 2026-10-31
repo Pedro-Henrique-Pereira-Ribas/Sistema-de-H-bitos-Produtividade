@@ -4,6 +4,7 @@
 
   const listeners = new Set();
   let saveTimer = null;
+  let savedSnapshot = null;
 
   const State = {
     data: null,
@@ -32,11 +33,23 @@
       saveTimer = null;
       const ok = Storage.save(this.data);
       this.storageOk = ok;
-      if (ok && typeof this.onSave === 'function') {
+      if (ok) {
+        let snapshot = null;
         try {
-          this.onSave();
+          snapshot = JSON.stringify(this.data);
         } catch (err) {
-          console.warn('[Fluxo] Falha no gancho de salvamento.', err);
+          snapshot = null;
+        }
+        // Salvar sem mudanças reais (ex.: beforeunload) não deve marcar a nuvem como pendente.
+        if (snapshot !== null && snapshot !== savedSnapshot) {
+          savedSnapshot = snapshot;
+          if (typeof this.onSave === 'function') {
+            try {
+              this.onSave();
+            } catch (err) {
+              console.warn('[Fluxo] Falha no gancho de salvamento.', err);
+            }
+          }
         }
       }
       if (!ok && typeof this.onSaveError === 'function') this.onSaveError();

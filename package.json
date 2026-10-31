@@ -2,26 +2,38 @@
   "name": "fluxo",
   "version": "1.1.0",
   "private": true,
-  "description": "Fluxo — sistema de hábitos e produtividade com sincronização opcional via API e TiDB Cloud.",
+  "description": "Fluxo — sistema de hábitos e produtividade com sincronização opcional via API, Neon Postgres e Neon Auth.",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "build": "node scripts/build-client.mjs && npm run check",
     "db:init": "node server/init-db.js",
     "test": "node --test server/test/*.test.js",
-    "check": "node --check server/index.js && node --check server/app.js && node --check server/db.js && node --check server/store.js && node --check server/init-db.js"
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:e2e:ui": "node scripts/e2e-ui.mjs",
+    "check": "node --check server/index.js && node --check server/app.js && node --check server/auth.js && node --check server/db.js && node --check server/store.js && node --check server/init-db.js && node --check server/cloud-error.js && node --check server/storage.js && node --check server/ai.js && node --check server/cloud-functions.js && node --check server/realtime.js && node --check js/cloud.js && node --check js/realtime.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "@aws-sdk/client-s3": "^3.1160.0",
+    "@aws-sdk/s3-request-presigner": "^3.1160.0",
+    "@neon/config": "^1.9.5",
+    "@neon/env": "^1.6.6",
+    "@neon/functions": "^0.11.0",
+    "@neon/realtime": "^0.1.2",
+    "@neondatabase/auth": "^0.6.0-beta",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
-    "jsonwebtoken": "^9.0.2",
-    "mysql2": "^3.12.0"
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright": "^1.64.1"
   }
 }
